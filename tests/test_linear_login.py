@@ -47,5 +47,26 @@ def test_login_01():
     # Validar que estes en la pagina de Products
     assert "inventory" in driver.current_url
 
+def test_login_04():
+    # Setup Chrome
+    driver = webdriver.Chrome()
+
+    # Navegar al sitio
+    driver.get("https://www.saucedemo.com/")
+
+    # Login
+    driver.find_element(By.ID, "user-name").send_keys("")
+    driver.find_element(By.ID, "password").send_keys("")
+    driver.find_element(By.ID, "login-button").click()
+
+    # Guardar el valor de el mensaje de error
+    error_message = driver.find_element(By.XPATH, "//h3[@data-test='error']").text
+
+    # Validar el mensaje de error
+    assert "Username is required" in error_message
+
+    # XPATH ABSOLUTO /html/body/div/div/div[2]/div[1]/div/div/form/div[3]/h3
+    # XPATH RELATIVO //h3[@data-test='error']
+
 
 
