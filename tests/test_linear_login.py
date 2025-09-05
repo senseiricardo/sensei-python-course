@@ -1,5 +1,6 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from pages.login_page import LoginPage
 
 # Buenas practicas para empezar a automatizar
 
@@ -63,10 +64,7 @@ def test_login_04():
     error_message = driver.find_element(By.XPATH, "//h3[@data-test='error']").text
 
     # Validar el mensaje de error
-    assert "Username is required" in error_message
+    assert "Epic sadface: Username is required" == error_message, f"El mensaje de error {error_message} es invalido"
 
     # XPATH ABSOLUTO /html/body/div/div/div[2]/div[1]/div/div/form/div[3]/h3
     # XPATH RELATIVO //h3[@data-test='error']
-
-
-

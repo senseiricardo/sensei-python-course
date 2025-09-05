@@ -29,7 +29,11 @@ def test_product_07():
     driver.implicitly_wait(10)
 
     # Validar que estes en la pagina de Products
-    assert "inventory" in driver.current_url
+    assert "inventory" in driver.current_url, f"la URL {driver.current_url} no contiene inventorio"
+
+    # Assertion
+    items = driver.find_elements(By.CLASS_NAME, "inventory_item_name")
+    assert len(items) > 0, "No se encontraron elementos en inventory page"
 
     # Seleccionar el primer producto
     driver.find_element(By.CLASS_NAME, "inventory_item_name").click()
