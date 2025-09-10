@@ -1,5 +1,8 @@
 import pytest
 from selenium import webdriver
+from pages.login_page import LoginPage
+from pages.product_details_page import ProductDetailPage
+from config.config import BASE_URL
 
 def pytest_addoption(parser):
     parser.addoption("--browser", action="store", default="chrome")
@@ -29,8 +32,16 @@ def driver(request):
     else:
         raise ValueError("Unsupported browser")
     
-    driver.get("https://www.saucedemo.com/")
+    driver.get(BASE_URL)
 
     yield driver
 
     driver.quit()
+
+@pytest.fixture
+def login_page(driver):
+    return LoginPage(driver)
+
+@pytest.fixture
+def product_details(driver):
+    return ProductDetailPage(driver)
