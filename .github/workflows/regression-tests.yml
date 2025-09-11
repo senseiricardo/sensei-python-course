@@ -67,8 +67,6 @@ jobs:
         set -o pipefail
         pytest tests/test_pom_logins.py -v --alluredir=results
         echo $? > .pytest_exitcode
-      # no usamos continue-on-error: true para no ocultar el fallo;
-      # guardamos el código y fallamos al final
 
     # Subir siempre los resultados crudos, aunque fallen tests
     - name: Upload Allure results (artifact)
@@ -78,6 +76,16 @@ jobs:
         name: allure-results
         path: results
         if-no-files-found: warn
+
+    # ---- Restaurar historial de Allure ----
+    - name: Restore Allure history
+      if: always()
+      uses: actions/cache@v4
+      with:
+        path: reports/history
+        key: allure-history-${{ github.run_id }}
+        restore-keys: |
+          allure-history-
 
     # ---- Generar Allure estático SIEMPRE ----
     - name: Set up Node (for Allure CLI)
@@ -94,6 +102,9 @@ jobs:
       if: always()
       run: |
         if [ -d results ] && [ "$(ls -A results || true)" ]; then
+          # Copiar history si existe
+          mkdir -p results/history
+          cp -R reports/history results/ || true
           allure generate results -o reports --clean
         else
           echo "No hay resultados de Allure; creando placeholder."
@@ -107,7 +118,17 @@ jobs:
         fi
         test -f reports/index.html
 
-    # Publicar SIEMPRE en Pages (main/docs)
+    # ---- Guardar historial de Allure ----
+    - name: Save Allure history
+      if: always()
+      uses: actions/cache@v4
+      with:
+        path: reports/history
+        key: allure-history-${{ github.run_id }}
+        restore-keys: |
+          allure-history-
+
+    # ---- Publicar en Pages (main/docs) ----
     - name: Prepare docs/
       if: always()
       run: |
@@ -123,6 +144,16 @@ jobs:
         commit_message: "chore: publish Allure report to docs/"
         branch: main
         file_pattern: docs/**
+
+    # ---- Mostrar link al reporte en el resumen ----
+    - name: Post Pages URL to summary
+      if: always()
+      run: |
+        owner_repo="${GITHUB_REPOSITORY}"
+        owner="${owner_repo%%/*}"
+        repo="${owner_repo#*/}"
+        echo "## ✅ Allure Report (GitHub Pages)" >> $GITHUB_STEP_SUMMARY
+        echo "URL: https://${owner}.github.io/${repo}/" >> $GITHUB_STEP_SUMMARY
 
     # --- Fallar el job si los tests fallaron ---
     - name: Fail job if tests failed
