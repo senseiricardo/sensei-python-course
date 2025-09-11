@@ -73,6 +73,7 @@ jobs:
 
   publish-allure:
     needs: tests
+    if: ${{ always() }}   # 👈 ahora se ejecuta aunque fallen los tests
     runs-on: ubuntu-latest
     steps:
       - name: Download allure-results artifact
