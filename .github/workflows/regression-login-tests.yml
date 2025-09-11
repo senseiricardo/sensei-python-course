@@ -1,0 +1,131 @@
+name: Regression Login Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gpg
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-linux-signing-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests (generate allure raw results)
+        env:
+          CI: "true"
+        run: |
+          pytest -v --alluredir=results --browser=chrome --headless tests/test_pom_logins.py
+
+      # 🔎 Debug: ver si se generó algo
+      - name: List Allure raw results
+        if: always()
+        run: |
+          echo "Contenido de results/:"
+          ls -la results || true
+
+      # ❗ Si no hay resultados, falla aquí (para que no “desaparezcan” los artifacts)
+      - name: Fail if results is empty
+        if: always()
+        run: |
+          if [ ! -d results ] || [ -z "$(ls -A results 2>/dev/null)" ]; then
+            echo "No hay archivos en results/. ¿Se corrió pytest con --alluredir=results?"
+            exit 1
+          fi
+
+      - name: Upload Allure results (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: results
+          if-no-files-found: error
+
+  publish-allure:
+    needs: tests
+    if: ${{ always() }}   # 👈 ahora se ejecuta aunque fallen los tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download allure-results artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: results
+
+      - name: Sanity check downloaded results
+        run: |
+          echo "Descargado:"
+          ls -la results
+          test -f results/summary.json || echo "⚠️ No hay summary.json (normal en algunos setups)"
+          test -n "$(ls -A results)" || (echo "❌ results vacío tras descargar artifact" && exit 1)
+
+      - name: Set up Java (required by Allure)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Allure CLI
+        run: npm i -g allure-commandline
+
+      - name: Generate Allure HTML
+        run: |
+          allure generate results -o site --clean
+          echo "Generado HTML:"
+          ls -la site
+          test -f site/index.html || (echo "❌ No existe site/index.html" && exit 1)
+
+      # Evita que Pages/Jekyll oculte assets (carpetas con _)
+      - name: Disable Jekyll
+        run: |
+          touch site/.nojekyll
+          ls -la site
+
+      # (Opcional) dejar también el HTML como artifact descargable
+      - name: Upload Allure HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-html
+          path: site
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
