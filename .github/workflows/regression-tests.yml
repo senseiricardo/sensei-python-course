@@ -7,6 +7,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Necesario para commitear docs/ a main
+permissions:
+  contents: write
+
 jobs:
   tests:
     runs-on: ubuntu-latest
@@ -14,6 +18,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0   # para poder commitear en la misma rama
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -28,6 +34,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
 
+    # Chrome estable. Selenium Manager resolverá el driver.
     - name: Install Google Chrome
       run: |
         sudo apt-get update
@@ -42,22 +49,59 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        python -c "import selenium, sys; print('Selenium', selenium.__version__); print(sys.version)"
+        # Asegura que el plugin de Allure esté instalado en tu requirements.txt: allure-pytest
+        python - <<'PY'
+        import selenium, sys
+        print('Selenium', selenium.__version__)
+        print(sys.version)
+        PY
 
-    # Si tus tests NO fuerzan headless desde el código, puedes usar Xvfb:
-    # - name: Run tests (xvfb)
-    #   run: xvfb-run -a pytest -v --alluredir=results
+    # Allure CLI necesita Java
+    - name: Set up Java (for Allure)
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
 
-    # Si ya pones headless en el código (recomendado), corre directo:
+    # Ejecuta solo tu test de login (ajusta la ruta/nombre si aplica)
     - name: Run tests
       env:
         CI: "true"
       run: |
         pytest tests/test_pom_logins.py -v --alluredir=results
 
-    - name: Upload Allure results
+    - name: Upload Allure results (artifact)
       uses: actions/upload-artifact@v4
       with:
         name: allure-results
         path: results
         if-no-files-found: warn
+
+    # ---- Generar Allure estático ----
+    - name: Set up Node (for Allure CLI)
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Allure Commandline
+      run: npm i -g allure-commandline
+
+    - name: Generate Allure report
+      run: |
+        allure generate results -o reports --clean
+        test -f reports/index.html
+
+    # ---- Publicar en Pages con Deploy from a branch -> main / docs ----
+    - name: Prepare docs/
+      run: |
+        rm -rf docs
+        mkdir -p docs
+        cp -R reports/* docs/
+        touch docs/.nojekyll
+
+    - name: Commit docs/ to main
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "chore: publish Allure report to docs/"
+        branch: main
+        file_pattern: docs/**
