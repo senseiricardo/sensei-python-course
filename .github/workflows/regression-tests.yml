@@ -7,9 +7,8 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Necesario para commitear docs/ a main
 permissions:
-  contents: write
+  contents: write  # para commitear docs/
 
 jobs:
   tests:
@@ -19,7 +18,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0   # para poder commitear en la misma rama
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -34,7 +33,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
 
-    # Chrome estable. Selenium Manager resolverá el driver.
     - name: Install Google Chrome
       run: |
         sudo apt-get update
@@ -49,50 +47,69 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        # Asegura que el plugin de Allure esté instalado en tu requirements.txt: allure-pytest
         python - <<'PY'
         import selenium, sys
         print('Selenium', selenium.__version__)
         print(sys.version)
         PY
 
-    # Allure CLI necesita Java
     - name: Set up Java (for Allure)
       uses: actions/setup-java@v4
       with:
         distribution: temurin
         java-version: '17'
 
-    # Ejecuta solo tu test de login (ajusta la ruta/nombre si aplica)
+    # --- Ejecutar tests y guardar exit code ---
     - name: Run tests
       env:
         CI: "true"
       run: |
+        set -o pipefail
         pytest tests/test_pom_logins.py -v --alluredir=results
+        echo $? > .pytest_exitcode
+      # no usamos continue-on-error: true para no ocultar el fallo;
+      # guardamos el código y fallamos al final
 
+    # Subir siempre los resultados crudos, aunque fallen tests
     - name: Upload Allure results (artifact)
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: allure-results
         path: results
         if-no-files-found: warn
 
-    # ---- Generar Allure estático ----
+    # ---- Generar Allure estático SIEMPRE ----
     - name: Set up Node (for Allure CLI)
+      if: always()
       uses: actions/setup-node@v4
       with:
         node-version: "20"
 
     - name: Install Allure Commandline
+      if: always()
       run: npm i -g allure-commandline
 
     - name: Generate Allure report
+      if: always()
       run: |
-        allure generate results -o reports --clean
+        if [ -d results ] && [ "$(ls -A results || true)" ]; then
+          allure generate results -o reports --clean
+        else
+          echo "No hay resultados de Allure; creando placeholder."
+          mkdir -p reports
+          cat > reports/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8">
+          <title>Allure Report</title>
+          <h1>No se generaron resultados de Allure</h1>
+          <p>Revisa el paso de pytest: pudo fallar antes de crear <code>results/</code>.</p>
+          HTML
+        fi
         test -f reports/index.html
 
-    # ---- Publicar en Pages con Deploy from a branch -> main / docs ----
+    # Publicar SIEMPRE en Pages (main/docs)
     - name: Prepare docs/
+      if: always()
       run: |
         rm -rf docs
         mkdir -p docs
@@ -100,8 +117,17 @@ jobs:
         touch docs/.nojekyll
 
     - name: Commit docs/ to main
+      if: always()
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
         commit_message: "chore: publish Allure report to docs/"
         branch: main
         file_pattern: docs/**
+
+    # --- Fallar el job si los tests fallaron ---
+    - name: Fail job if tests failed
+      if: always()
+      run: |
+        code=$(cat .pytest_exitcode 2>/dev/null || echo 0)
+        echo "pytest exit code: $code"
+        exit $code
