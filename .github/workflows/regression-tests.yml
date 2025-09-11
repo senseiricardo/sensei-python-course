@@ -1,65 +1,63 @@
-name: tests-and-allure-ghpages
+name: Python Selenium Tests
+
 on:
   push:
     branches: [ main ]
   pull_request:
-
-permissions:
-  contents: write   # => necesario para pushear a gh-pages
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   tests:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
-      - name: Install Java (Allure CLI necesita Java)
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+    - name: Install Google Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gpg
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-linux-signing-keyring.gpg
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        google-chrome --version
 
-      - name: Run tests (solo tu login)
-        run: |
-          pytest tests/test_pom_login.py -v --alluredir=results
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        python -c "import selenium, sys; print('Selenium', selenium.__version__); print(sys.version)"
 
-      - name: Debug results
-        run: |
-          ls -la results || true
+    # Si tus tests NO fuerzan headless desde el código, puedes usar Xvfb:
+    # - name: Run tests (xvfb)
+    #   run: xvfb-run -a pytest -v --alluredir=results
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+    # Si ya pones headless en el código (recomendado), corre directo:
+    - name: Run tests
+      env:
+        CI: "true"
+      run: |
+        pytest tests/test_pom_logins.py -v --alluredir=results
 
-      - name: Install Allure CLI
-        run: npm i -g allure-commandline
-
-      - name: Generate Allure report
-        run: allure generate results -o reports --clean
-
-      - name: Ensure index.html exists
-        run: test -f reports/index.html
-
-      # (Opcional) artifacts para descargar
-      - uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: reports
-
-      # Publicar a gh-pages
-      - name: Publish to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: reports
-          publish_branch: gh-pages
-          force_orphan: true   # crea historial limpio (opcional)
+    - name: Upload Allure results
+      uses: actions/upload-artifact@v4
+      with:
+        name: allure-results
+        path: results
+        if-no-files-found: warn
