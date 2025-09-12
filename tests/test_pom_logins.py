@@ -14,5 +14,5 @@ def test_login_04_pom(login_page):
     # Guardar el valor de el mensaje de error
     error_message = login_page.get_error_message()
     # Validar el mensaje de error
-    assert "Epic sadface: Username is required" == error_message, f"El mensaje de error {error_message} es invalido"
+    assert "Epic sadface: PAsswerr is required" == error_message, f"El mensaje de error {error_message} es invalido"
 
